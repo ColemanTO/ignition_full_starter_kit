@@ -1,5 +1,7 @@
 
-from fastapi import FastAPI, WebSocket
+import asyncio
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import json
 
@@ -37,16 +39,39 @@ async def solve(data: dict):
     return {"schedule": schedule}
 
 
+def safe_json(data):
+    import datetime
+
+    def convert(obj):
+        if isinstance(obj, datetime.datetime):
+            return obj.isoformat()
+        return obj
+
+    return json.dumps(data, default=convert)
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    print("✅ WebSocket connected")
+
     await websocket.accept()
     clients.append(websocket)
 
     try:
         while True:
-            await websocket.receive_text()  # keep connection alive
-    except:
-        clients.remove(websocket)
+            # keep connection alive even if no data changes
+            await websocket.send_text(safe_json(GLOBAL_STATE))
+            await asyncio.sleep(1)
+
+    except WebSocketDisconnect:
+        print("🛑 Client disconnected")
+
+    except Exception as e:
+        print("❌ WebSocket error:", e)
+
+    finally:
+        if websocket in clients:
+            clients.remove(websocket)
 
 
 async def broadcast_state():
